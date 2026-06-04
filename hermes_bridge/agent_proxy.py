@@ -19,39 +19,12 @@ logger = logging.getLogger(__name__)
 
 # ── Hermes imports (lazy to avoid circular deps on import) ──────────────
 
-_HERMES_LOADED = False
-
-
-def _ensure_hermes_env():
-    """Ensure the Hermes agent code is importable by adding it to sys.path."""
-    global _HERMES_LOADED
-    if _HERMES_LOADED:
-        return
-
-    # Find the Hermes agent root
-    candidates = [
-        Path(__file__).resolve().parent.parent.parent.parent,  # ../../.. from bridge_api/hermes_bridge/
-        Path.home() / ".hermes" / "hermes-agent",
-    ]
-    hermes_root = None
-    for p in candidates:
-        if (p / "run_agent.py").exists():
-            hermes_root = str(p.resolve())
-            break
-
-    if not hermes_root:
-        raise RuntimeError(
-            "Could not find Hermes agent root. "
-            "Expected run_agent.py in the parent directory chain."
-        )
-
-    if hermes_root not in sys.path:
-        sys.path.insert(0, hermes_root)
-    _HERMES_LOADED = True
+from .hermes_env import ensure_hermes_env as _ensure_hermes_env  # noqa: F401
 
 
 def load_config():
     """Load Hermes config.yaml similar to how the gateway does it."""
+    _ensure_hermes_env()
     from hermes_cli.config import load_config as _load_cfg
     return _load_cfg()
 

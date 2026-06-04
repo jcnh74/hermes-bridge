@@ -13,11 +13,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from hermes_constants import get_hermes_home
+from .hermes_env import get_hermes_home
 
 logger = logging.getLogger("hermes_bridge.skills")
 
-SKILLS_DIR = get_hermes_home() / "skills"
+
+def _skills_dir() -> Path:
+    """Resolve ~/.hermes/skills lazily (never at import time)."""
+    return get_hermes_home() / "skills"
 
 # ── SQLite persistence ────────────────────────────────────────────────
 
@@ -101,14 +104,15 @@ def list_skills() -> list[dict]:
 
     Returns list of {name, description, category}.
     """
-    if not SKILLS_DIR.exists():
+    skills_dir = _skills_dir()
+    if not skills_dir.exists():
         return []
 
     skills = []
     seen_names: set[str] = set()
 
-    for skill_md in sorted(SKILLS_DIR.rglob("SKILL.md")):
-        rel = skill_md.relative_to(SKILLS_DIR)
+    for skill_md in sorted(skills_dir.rglob("SKILL.md")):
+        rel = skill_md.relative_to(skills_dir)
         parts = rel.parts
         if len(parts) >= 3:
             category = parts[0]
@@ -152,11 +156,12 @@ def get_skill(name: str) -> Optional[dict]:
     Returns {name, description, category, tags, content, linked_files}
     or None if not found.
     """
-    if not SKILLS_DIR.exists():
+    skills_dir = _skills_dir()
+    if not skills_dir.exists():
         return None
 
-    for skill_md in SKILLS_DIR.rglob("SKILL.md"):
-        rel = skill_md.relative_to(SKILLS_DIR)
+    for skill_md in skills_dir.rglob("SKILL.md"):
+        rel = skill_md.relative_to(skills_dir)
         parts = rel.parts
         if len(parts) >= 3:
             category = parts[0]
@@ -211,10 +216,11 @@ def get_skill(name: str) -> Optional[dict]:
 
 def get_skill_linked_file(name: str, file_path: str) -> Optional[str]:
     """Get content of a linked file within a skill."""
-    if not SKILLS_DIR.exists():
+    skills_dir = _skills_dir()
+    if not skills_dir.exists():
         return None
 
-    for skill_md in SKILLS_DIR.rglob("SKILL.md"):
+    for skill_md in skills_dir.rglob("SKILL.md"):
         try:
             full_content = skill_md.read_text(encoding="utf-8")[:2000]
             frontmatter, _ = _parse_frontmatter(full_content)

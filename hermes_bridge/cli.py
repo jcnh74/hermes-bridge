@@ -31,10 +31,84 @@ def find_log_file() -> Path:
     return log_dir / "bridge.log"
 
 
+def preflight(verbose: bool = True) -> bool:
+    """
+    Verify the environment can run the bridge before we start the server.
+
+    Checks: Hermes install is locatable, its Python modules import, and the
+    runtime provider/config resolves. Returns True if good to go.
+    """
+    ok = True
+
+    def say(msg):
+        if verbose:
+            print(msg)
+
+    # 1. Locate Hermes
+    from .hermes_env import find_hermes_root, ensure_hermes_env, HermesNotFoundError
+    root = find_hermes_root()
+    if not root:
+        say("✗ Hermes Agent not found.")
+        say("")
+        try:
+            ensure_hermes_env()  # raises with the full actionable message
+        except HermesNotFoundError as exc:
+            say(str(exc))
+        return False
+    say(f"✓ Hermes Agent found: {root}")
+
+    # 2. Import Hermes modules
+    try:
+        ensure_hermes_env()
+        import run_agent  # noqa: F401
+        from hermes_cli.config import load_config  # noqa: F401
+        say("✓ Hermes Python modules import cleanly")
+    except Exception as exc:
+        say(f"✗ Failed to import Hermes modules: {type(exc).__name__}: {exc}")
+        say("  Is the Hermes virtualenv active? Run the bridge with the same")
+        say("  Python that runs Hermes (e.g. ~/.hermes/hermes-agent/.venv).")
+        return False
+
+    # 3. Resolve config + provider
+    try:
+        from .agent_proxy import load_config as _lc
+        cfg = _lc()
+        model = (cfg.get("model") or {}).get("default") if isinstance(cfg, dict) else None
+        say(f"✓ Hermes config loaded (default model: {model or 'unset'})")
+    except Exception as exc:
+        say(f"⚠ Could not fully resolve Hermes config: {type(exc).__name__}: {exc}")
+        say("  The bridge will start, but agent calls may fail until config/keys are set.")
+        # non-fatal
+
+    return ok
+
+
+def cmd_doctor(args):
+    """Run preflight checks and report environment health."""
+    print("Hermes Bridge — environment check\n")
+    healthy = preflight(verbose=True)
+    print()
+    if healthy:
+        print("All checks passed. Start the bridge with: hermes-bridge start")
+        sys.exit(0)
+    else:
+        print("Fix the issues above, then run: hermes-bridge doctor")
+        sys.exit(1)
+
+
 def cmd_start(args):
     """Start the bridge server."""
     port = args.port
     host = args.host
+
+    # Preflight unless explicitly skipped — fail fast with a clear message.
+    if not getattr(args, "skip_checks", False):
+        if not preflight(verbose=True):
+            print()
+            print("Preflight failed. Run 'hermes-bridge doctor' for details,")
+            print("or 'hermes-bridge start --skip-checks' to start anyway.")
+            sys.exit(1)
+        print()
 
     if not args.foreground:
         # Check if already running
@@ -222,6 +296,7 @@ def main():
     start_p.add_argument("--port", type=int, default=8765, help="Port to listen on (default: 8765)")
     start_p.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     start_p.add_argument("--foreground", "-f", action="store_true", help="Run in foreground (don't daemonize)")
+    start_p.add_argument("--skip-checks", action="store_true", help="Skip preflight environment checks")
 
     # stop
     stop_p = sub.add_parser("stop", help="Stop the bridge server")
@@ -242,6 +317,9 @@ def main():
     pair_p.add_argument("--port", type=int, default=8765, help=argparse.SUPPRESS)
     pair_p.add_argument("--host", type=str, default="0.0.0.0", help=argparse.SUPPRESS)
 
+    # doctor
+    sub.add_parser("doctor", help="Check the environment is ready to run the bridge")
+
     args = parser.parse_args()
 
     if args.command == "start":
@@ -254,6 +332,8 @@ def main():
         cmd_restart(args)
     elif args.command == "pair":
         cmd_pair(args)
+    elif args.command == "doctor":
+        cmd_doctor(args)
 
 
 if __name__ == "__main__":

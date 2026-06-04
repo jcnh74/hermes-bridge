@@ -21,23 +21,48 @@ The bridge runs alongside a Hermes installation, discovers the agents and skills
 
 ## Requirements
 
-- Python **3.9+**
-- A working [Hermes Agent](https://hermes-agent.nousresearch.com) install at `~/.hermes/hermes-agent` (the bridge imports it at runtime via `sys.path` and reads config from `~/.hermes/`)
+- Python **3.11+** (the same interpreter that runs your Hermes install)
+- A working [Hermes Agent](https://hermes-agent.nousresearch.com) install at `~/.hermes/hermes-agent` (the bridge imports it at runtime and reads config from `~/.hermes/`)
 
 ---
 
-## Quick Start
+## Install (one command)
 
 ```bash
 git clone https://github.com/jcnh74/hermes-bridge.git
 cd hermes-bridge
-pip install -e .
+./install.sh
+```
 
-# Start the server (daemonized by default)
-hermes-bridge start --port 8765
+The installer:
+1. Finds your Hermes install (or honors `HERMES_AGENT_ROOT=/path`)
+2. Picks the **same Python venv** that runs Hermes (so imports resolve)
+3. Installs the bridge + optional QR support
+4. Runs a preflight check and prints exactly how to start
 
-# Or run in the foreground for debugging
-hermes-bridge start --port 8765 --foreground
+If anything's off, it tells you precisely what to fix — no stack traces.
+
+### Verify the environment anytime
+
+```bash
+hermes-bridge doctor
+```
+
+```
+✓ Hermes Agent found: /Users/you/.hermes/hermes-agent
+✓ Hermes Python modules import cleanly
+✓ Hermes config loaded (default model: claude-opus-4-8)
+All checks passed. Start the bridge with: hermes-bridge start
+```
+
+### Start it
+
+```bash
+hermes-bridge start              # daemonized; runs preflight first
+hermes-bridge start --foreground # run in the foreground for debugging
+hermes-bridge status             # is it running?
+hermes-bridge pair               # QR + URL to connect the Agentfy app
+hermes-bridge stop
 ```
 
 Verify it's up:
@@ -47,11 +72,27 @@ curl http://localhost:8765/api/v1/health
 # {"status":"ok","version":"0.1.0","agents_available":5,"sessions_active":0, ...}
 ```
 
+### Manual install (if you'd rather not use the script)
+
+```bash
+# Use the Python that runs Hermes
+~/.hermes/hermes-agent/venv/bin/python -m pip install -e ".[qr]"
+~/.hermes/hermes-agent/venv/bin/python -m hermes_bridge.cli doctor
+```
+
+### Pointing at a non-standard Hermes location
+
+```bash
+export HERMES_AGENT_ROOT=/opt/hermes-agent   # dir containing run_agent.py
+hermes-bridge doctor
+```
+
 ### CLI commands
 
 | Command | Description |
 |---------|-------------|
-| `hermes-bridge start [--port 8765] [--host 0.0.0.0] [--foreground]` | Start the server |
+| `hermes-bridge doctor` | Check the environment is ready (run this first) |
+| `hermes-bridge start [--port 8765] [--host 0.0.0.0] [--foreground] [--skip-checks]` | Start the server (runs preflight unless `--skip-checks`) |
 | `hermes-bridge stop` | Stop the running server |
 | `hermes-bridge status` | Check whether the server is running |
 | `hermes-bridge restart` | Restart the server |
@@ -129,10 +170,11 @@ Agentfy app  ──HTTP/SSE──▶  Hermes Bridge (FastAPI)  ──sys.path im
                                    │                                          (~/.hermes/)
                                    ├── server.py       REST + SSE routes
                                    ├── agent_proxy.py  spawns/streams the agent
+                                   ├── hermes_env.py   locates Hermes, hardens imports
                                    ├── skills.py       scans ~/.hermes/skills, attach/detach
                                    ├── persistence.py  SQLite (~/.hermes/hermes.db)
                                    ├── models.py       pydantic request/response schemas
-                                   └── cli.py          start/stop/status/restart/pair
+                                   └── cli.py          start/stop/status/restart/pair/doctor
 ```
 
 The bridge does not bundle Hermes — it locates an existing install at `~/.hermes/hermes-agent` and imports `run_agent` / `hermes_cli` at runtime. Keys and config are read from and written to the standard `~/.hermes/` locations so the bridge and the Hermes CLI stay in sync.
