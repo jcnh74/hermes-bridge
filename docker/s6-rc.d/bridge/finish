@@ -1,0 +1,22 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# Bridge finish script. Companion to ./run.
+#
+# When HERMES_BRIDGE is unset (or falsy), ./run exits 0 immediately. Without
+# this finish script, s6-supervise would restart the run script in a tight
+# loop. Exiting 125 here tells s6-supervise "permanently failed; do not
+# restart" — the slot reports down, matching reality (no bridge running).
+#
+# When HERMES_BRIDGE IS enabled and the run script later exits/crashes, we
+# exit non-125 so s6-supervise restarts it (supervised lifecycle).
+#
+# Args: $1=run-exit-code $2=signal-num $3=service-dir-name $4=run-pgid
+
+case "${HERMES_BRIDGE:-}" in
+    1|true|TRUE|True|yes|YES|Yes)
+        exit 0
+        ;;
+    *)
+        exit 125
+        ;;
+esac

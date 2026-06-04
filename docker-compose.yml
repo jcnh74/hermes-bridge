@@ -1,43 +1,47 @@
-# Hermes Bridge — Docker Compose
 #
-# Brings up the bridge in a container that talks to your existing Hermes install.
+# docker-compose.yml for the Hermes Bridge (derived-image approach)
 #
-# Secrets stay OUT of the image: your ~/.hermes (config.yaml, .env with API keys,
-# hermes.db) is mounted at runtime. The Hermes source is mounted read-only.
+# Builds a thin image on top of the official Hermes Agent image and runs the
+# gateway + bridge together under s6 supervision in one container — the same
+# methodology Hermes uses for its own gateway + dashboard.
 #
 # Usage:
-#   docker compose up -d        # start in background
-#   docker compose logs -f      # follow logs
-#   docker compose down         # stop
+#   HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d
 #
-# Override the Hermes location with HERMES_HOST_PATH if it isn't the default.
-
+# Set HERMES_UID / HERMES_GID to the host user that owns ~/.hermes so files
+# created in the container stay readable/writable on the host. The s6 stage2
+# hook remaps the internal hermes user to these values and chowns the volume.
+#
+# Secrets: your ~/.hermes (config.yaml, .env keys, hermes.db) is mounted at
+# /opt/data — NEVER baked into the image. The bridge shares it with the gateway.
+#
+# Security: the bridge binds 0.0.0.0 for LAN/app access. Don't expose it
+# directly to the public internet — front it with a tunnel or authenticated
+# reverse proxy (e.g. Cloudflare Tunnel).
+#
 services:
-  hermes-bridge:
-    build: .
+  hermes:
+    build:
+      context: .
+      # Pin to your installed Hermes version for reproducibility, e.g.:
+      #   args: { HERMES_IMAGE: nousresearch/hermes-agent:v1.2.3 }
+      args:
+        HERMES_IMAGE: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     image: hermes-bridge:latest
     container_name: hermes-bridge
     restart: unless-stopped
-    ports:
-      - "8765:8765"
+    network_mode: host
     volumes:
-      # Hermes source — read-only, imported at runtime.
-      - "${HERMES_HOST_PATH:-${HOME}/.hermes/hermes-agent}:/hermes:ro"
-      # Hermes data home — config.yaml, .env (API keys), hermes.db. Read-write
-      # so the bridge can persist sessions/skills. NEVER baked into the image.
-      - "${HERMES_HOME_PATH:-${HOME}/.hermes}:/root/.hermes"
-      # Persist the container's installed-deps venv across restarts so the
-      # one-time Hermes dependency install doesn't repeat on every boot.
-      - bridge-venv:/opt/bridge-venv
+      - ~/.hermes:/opt/data
     environment:
-      HERMES_AGENT_ROOT: /hermes
-      # The bridge resolves Hermes data home to /root/.hermes inside the container.
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/v1/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-
-volumes:
-  bridge-venv:
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
+      # Turn the bridge service on (off by default, mirroring the dashboard).
+      - HERMES_BRIDGE=1
+      - HERMES_BRIDGE_HOST=${HERMES_BRIDGE_HOST:-0.0.0.0}
+      - HERMES_BRIDGE_PORT=${HERMES_BRIDGE_PORT:-8765}
+      # Optional: also run the dashboard in the same container.
+      # - HERMES_DASHBOARD=1
+    # Gateway is the container's main program (image default CMD). The bridge
+    # and (optional) dashboard run as supervised s6 side-services.
+    command: ["gateway", "run"]

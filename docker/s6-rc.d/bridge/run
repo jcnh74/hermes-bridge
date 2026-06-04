@@ -1,0 +1,36 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# Bridge service. Mirrors the dashboard service pattern: always declared so
+# s6 has a supervised slot, but gated by HERMES_BRIDGE. When unset/falsy the
+# run script exits 0 and the companion finish script returns 125 (s6's
+# "permanent failure, do not restart" marker), so s6-svstat reports the slot
+# as down. See also ./finish.
+
+case "${HERMES_BRIDGE:-}" in
+    1|true|TRUE|True|yes|YES|Yes) ;;
+    *)
+        # Exit 0; the finish script exits 125 → s6-supervise won't restart
+        # and the slot reports down, matching reality.
+        exit 0
+        ;;
+esac
+
+# with-contenv repopulates HOME from /init as /root. Reset it before dropping
+# privileges so HOME-anchored state lands under /opt/data (= HERMES_HOME).
+export HOME=/opt/data
+
+cd /opt/data
+# shellcheck disable=SC1091
+. /opt/hermes/.venv/bin/activate
+
+bridge_host="${HERMES_BRIDGE_HOST:-0.0.0.0}"
+bridge_port="${HERMES_BRIDGE_PORT:-8765}"
+
+# --foreground: don't daemonize — s6 supervises the process directly.
+# --skip-checks: the base image guarantees Hermes is importable; preflight
+# would just duplicate work s6/the gateway already rely on.
+# Skip the privilege drop when already non-root.
+[ "$(id -u)" = 0 ] || exec hermes-bridge start \
+    --host "$bridge_host" --port "$bridge_port" --foreground --skip-checks
+exec s6-setuidgid hermes hermes-bridge start \
+    --host "$bridge_host" --port "$bridge_port" --foreground --skip-checks

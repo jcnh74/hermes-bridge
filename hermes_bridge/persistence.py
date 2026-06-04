@@ -35,7 +35,11 @@ _lock = threading.Lock()
 def _get_db_path() -> str:
     global _db_path
     if _db_path is None:
-        _db_path = str(Path.home() / ".hermes" / "hermes.db")
+        # Route through Hermes' home resolution (HERMES_HOME / profile-aware)
+        # so the DB lands at the same place the Hermes CLI uses — both on the
+        # host (~/.hermes/hermes.db) and in the container (/opt/data/hermes.db).
+        from .hermes_env import get_hermes_home
+        _db_path = str(get_hermes_home() / "hermes.db")
     return _db_path
 
 

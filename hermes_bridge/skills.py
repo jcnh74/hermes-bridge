@@ -32,7 +32,8 @@ _lock = threading.Lock()
 def _get_db_path() -> str:
     global _db_path
     if _db_path is None:
-        _db_path = str(Path.home() / ".hermes" / "hermes.db")
+        # Same DB the Hermes CLI uses — HERMES_HOME / profile-aware.
+        _db_path = str(get_hermes_home() / "hermes.db")
     return _db_path
 
 

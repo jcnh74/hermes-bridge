@@ -106,34 +106,55 @@ hermes-bridge doctor
 
 ## Run with Docker
 
-The bridge imports a Hermes install at runtime, so the container uses a
-**bring-your-own-Hermes** model: the Hermes source and your `~/.hermes` data
-home (config, `.env` keys, `hermes.db`) are **mounted at runtime** — never baked
-into the image. No secrets ever land in an image layer.
+The bridge containerizes by **deriving from the official Hermes Agent image**
+rather than reinventing the runtime. Hermes already ships a Python venv with
+every dependency the bridge needs (fastapi, uvicorn, sse-starlette, pydantic,
+httpx), so the image just installs the bridge package into that venv and runs
+it as an [s6-overlay](https://github.com/just-containers/s6-overlay)-supervised
+service **alongside the gateway** — exactly how Hermes runs its own dashboard.
+
+This means the bridge inherits Hermes' container methodology wholesale:
+
+- **`HERMES_HOME=/opt/data`** — you mount `~/.hermes:/opt/data`. Config, `.env`
+  keys, and `hermes.db` live there and are **never baked into the image**. The
+  bridge and gateway share the same DB and keys automatically.
+- **UID/GID remap** (`HERMES_UID`/`HERMES_GID`) so container-written files stay
+  owned by your host user.
+- **s6 supervision** — gateway, bridge, and (optionally) dashboard run in one
+  container, each restarted independently if it crashes.
+- **Env-gated** — the bridge service only starts when `HERMES_BRIDGE=1`, mirroring
+  the dashboard's `HERMES_DASHBOARD` gate.
 
 ```bash
-# From the repo root, with Hermes installed at ~/.hermes/hermes-agent:
-docker compose up -d        # build + start in background
-docker compose logs -f      # follow logs (watch preflight pass)
+# From the repo root:
+HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d
+docker compose logs -f      # follow logs
 docker compose down         # stop
 ```
 
-The bridge is then reachable at `http://localhost:8765/api/v1`.
+The bridge is then reachable at `http://localhost:8765/api/v1` (host networking).
 
-Point at a non-standard Hermes location with env vars:
+**Pin the Hermes version** for reproducible builds:
 
 ```bash
-HERMES_HOST_PATH=/opt/hermes-agent HERMES_HOME_PATH=/opt/hermes-data \
-  docker compose up -d
+HERMES_IMAGE=nousresearch/hermes-agent:v1.2.3 \
+  HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d
 ```
 
-How it works:
-- **Hermes source** is mounted read-only at `/hermes` (`HERMES_AGENT_ROOT`).
-- **Hermes data home** (`~/.hermes`) is mounted read-write at `/root/.hermes` so
-  sessions/skills persist and keys are read from the same `.env` the CLI uses.
-- A host virtualenv can't be reused in the Linux container, so the entrypoint
-  installs Hermes' Python deps **once** into a named volume (`bridge-venv`) on
-  first boot, then runs `hermes-bridge doctor` before starting.
+**Bridge-only** (no gateway)? Swap the compose `command` to keep the container
+alive while only the supervised bridge runs:
+
+```yaml
+    command: ["sleep", "infinity"]   # with HERMES_BRIDGE=1
+```
+
+### Why derive instead of a standalone image
+
+An earlier approach built a standalone image that reinstalled Hermes' entire
+dependency tree into a second venv and mounted the Hermes source separately.
+Deriving from the official image is simpler and more correct: no duplicate
+deps, no second venv, no first-boot install, no custom entrypoint — and the
+bridge stays in lockstep with the Hermes runtime it talks to.
 
 ---
 
@@ -243,9 +264,9 @@ Agentfy app  ──HTTP/SSE──▶  Hermes Bridge (FastAPI)  ──sys.path im
                                    └── cli.py          start/stop/status/restart/pair/doctor
 
 Repo layout also includes:
-  Dockerfile, docker-compose.yml, docker/entrypoint.sh   containerized run
-  tests/                                                 pytest suite (no live Hermes needed)
-  install.sh                                             one-command host install
+  Dockerfile, docker-compose.yml, docker/s6-rc.d/   derived-image + s6 bridge service
+  tests/                                            pytest suite (no live Hermes needed)
+  install.sh                                        one-command host install
 ```
 
 The bridge does not bundle Hermes — it locates an existing install at `~/.hermes/hermes-agent` and imports `run_agent` / `hermes_cli` at runtime. Keys and config are read from and written to the standard `~/.hermes/` locations so the bridge and the Hermes CLI stay in sync.
