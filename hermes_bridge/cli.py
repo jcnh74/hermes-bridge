@@ -19,9 +19,13 @@ from pathlib import Path
 logger = logging.getLogger("hermes_bridge.cli")
 
 
-def find_pid_file() -> Path:
-    """Return the path to the PID file."""
-    return Path.home() / ".hermes" / "bridge.pid"
+def find_pid_file(port: int = 8765) -> Path:
+    """Return the path to the PID file for a given port.
+
+    Port-specific so multiple bridge instances on different ports each get
+    their own PID file and don't clobber each other's lifecycle state.
+    """
+    return Path.home() / ".hermes" / f"bridge-{port}.pid"
 
 
 def find_log_file() -> Path:
@@ -112,7 +116,7 @@ def cmd_start(args):
 
     if not args.foreground:
         # Check if already running
-        pid_file = find_pid_file()
+        pid_file = find_pid_file(port)
         if pid_file.exists():
             try:
                 pid = int(pid_file.read_text().strip())
@@ -142,7 +146,7 @@ def cmd_start(args):
         log_fh.close()
 
         # Write PID
-        pid_file = find_pid_file()
+        pid_file = find_pid_file(port)
         pid_file.write_text(str(os.getpid()))
     else:
         print(f"Hermes Bridge API starting on http://{host}:{port}")
@@ -174,7 +178,7 @@ def cmd_start(args):
 
 def cmd_stop(args):
     """Stop the bridge server."""
-    pid_file = find_pid_file()
+    pid_file = find_pid_file(args.port)
     if not pid_file.exists():
         print("Bridge is not running (no PID file found)")
         return
@@ -201,7 +205,7 @@ def cmd_stop(args):
 
 def cmd_status(args):
     """Check if the bridge server is running."""
-    pid_file = find_pid_file()
+    pid_file = find_pid_file(args.port)
     port = args.port
 
     if pid_file.exists():

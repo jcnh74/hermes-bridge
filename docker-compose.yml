@@ -1,0 +1,43 @@
+# Hermes Bridge — Docker Compose
+#
+# Brings up the bridge in a container that talks to your existing Hermes install.
+#
+# Secrets stay OUT of the image: your ~/.hermes (config.yaml, .env with API keys,
+# hermes.db) is mounted at runtime. The Hermes source is mounted read-only.
+#
+# Usage:
+#   docker compose up -d        # start in background
+#   docker compose logs -f      # follow logs
+#   docker compose down         # stop
+#
+# Override the Hermes location with HERMES_HOST_PATH if it isn't the default.
+
+services:
+  hermes-bridge:
+    build: .
+    image: hermes-bridge:latest
+    container_name: hermes-bridge
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      # Hermes source — read-only, imported at runtime.
+      - "${HERMES_HOST_PATH:-${HOME}/.hermes/hermes-agent}:/hermes:ro"
+      # Hermes data home — config.yaml, .env (API keys), hermes.db. Read-write
+      # so the bridge can persist sessions/skills. NEVER baked into the image.
+      - "${HERMES_HOME_PATH:-${HOME}/.hermes}:/root/.hermes"
+      # Persist the container's installed-deps venv across restarts so the
+      # one-time Hermes dependency install doesn't repeat on every boot.
+      - bridge-venv:/opt/bridge-venv
+    environment:
+      HERMES_AGENT_ROOT: /hermes
+      # The bridge resolves Hermes data home to /root/.hermes inside the container.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  bridge-venv:

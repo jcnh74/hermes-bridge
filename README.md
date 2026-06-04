@@ -98,6 +98,72 @@ hermes-bridge doctor
 | `hermes-bridge restart` | Restart the server |
 | `hermes-bridge pair` | Print pairing URL + QR code for the Agentfy app |
 
+> **Multiple instances:** PID files are port-specific (`~/.hermes/bridge-<port>.pid`),
+> so you can run several bridges on different ports without their lifecycle
+> commands (`stop`/`status`/`restart`) clobbering each other.
+
+---
+
+## Run with Docker
+
+The bridge imports a Hermes install at runtime, so the container uses a
+**bring-your-own-Hermes** model: the Hermes source and your `~/.hermes` data
+home (config, `.env` keys, `hermes.db`) are **mounted at runtime** — never baked
+into the image. No secrets ever land in an image layer.
+
+```bash
+# From the repo root, with Hermes installed at ~/.hermes/hermes-agent:
+docker compose up -d        # build + start in background
+docker compose logs -f      # follow logs (watch preflight pass)
+docker compose down         # stop
+```
+
+The bridge is then reachable at `http://localhost:8765/api/v1`.
+
+Point at a non-standard Hermes location with env vars:
+
+```bash
+HERMES_HOST_PATH=/opt/hermes-agent HERMES_HOME_PATH=/opt/hermes-data \
+  docker compose up -d
+```
+
+How it works:
+- **Hermes source** is mounted read-only at `/hermes` (`HERMES_AGENT_ROOT`).
+- **Hermes data home** (`~/.hermes`) is mounted read-write at `/root/.hermes` so
+  sessions/skills persist and keys are read from the same `.env` the CLI uses.
+- A host virtualenv can't be reused in the Linux container, so the entrypoint
+  installs Hermes' Python deps **once** into a named volume (`bridge-venv`) on
+  first boot, then runs `hermes-bridge doctor` before starting.
+
+---
+
+## Testing
+
+The suite covers the bridge's own logic — discovery, persistence, skill
+scanning, model validation, and the port-specific PID fix — with **no live
+Hermes install or running server required** (a fake Hermes root and temp DBs
+are fabricated in fixtures).
+
+```bash
+# Use the Python that runs Hermes
+pip install -e ".[test]"
+pytest                # run the suite
+pytest --cov          # with coverage report
+```
+
+Coverage focuses on the pure, testable modules:
+
+| Module | Coverage |
+|--------|----------|
+| `models.py` | 100% |
+| `hermes_env.py` | ~95% |
+| `skills.py` | ~88% |
+| `persistence.py` | ~81% |
+
+`server.py` and `agent_proxy.py` need a live Hermes/uvicorn runtime and are
+covered by integration smoke tests rather than the unit suite (they're omitted
+from the coverage target in `pyproject.toml`).
+
 ---
 
 ## API Reference
@@ -175,6 +241,11 @@ Agentfy app  ──HTTP/SSE──▶  Hermes Bridge (FastAPI)  ──sys.path im
                                    ├── persistence.py  SQLite (~/.hermes/hermes.db)
                                    ├── models.py       pydantic request/response schemas
                                    └── cli.py          start/stop/status/restart/pair/doctor
+
+Repo layout also includes:
+  Dockerfile, docker-compose.yml, docker/entrypoint.sh   containerized run
+  tests/                                                 pytest suite (no live Hermes needed)
+  install.sh                                             one-command host install
 ```
 
 The bridge does not bundle Hermes — it locates an existing install at `~/.hermes/hermes-agent` and imports `run_agent` / `hermes_cli` at runtime. Keys and config are read from and written to the standard `~/.hermes/` locations so the bridge and the Hermes CLI stay in sync.
