@@ -18,12 +18,14 @@ FROM ${HERMES_IMAGE}
 
 # Install the bridge into Hermes' existing venv with --no-deps: every runtime
 # dependency is already present in the base image's [all] extra, so this is a
-# fast egg-install with no resolution or downloads. Keeping --no-deps also
-# guarantees we never accidentally upgrade a Hermes-pinned package.
+# fast install with no resolution or downloads. --no-deps also guarantees we
+# never accidentally upgrade a Hermes-pinned package. The base image uses uv
+# (no pip in the venv), so we target the venv's interpreter explicitly.
 USER root
 COPY pyproject.toml README.md /opt/bridge/
 COPY hermes_bridge /opt/bridge/hermes_bridge
-RUN /opt/hermes/.venv/bin/pip install --no-cache-dir --no-deps /opt/bridge
+RUN uv pip install --python /opt/hermes/.venv/bin/python \
+        --no-cache --no-deps /opt/bridge
 
 # Register the bridge as an s6 service (mirrors the dashboard wiring). It's
 # gated by HERMES_BRIDGE — unset means the slot stays down, exactly like the
