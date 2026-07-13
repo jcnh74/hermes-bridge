@@ -86,15 +86,57 @@ say "Installing hermes-bridge (with QR support)..."
   || die "pip install failed. Try: $PYBIN -m pip install -e \"$SCRIPT_DIR[qr]\""
 ok "Installed into $PYBIN"
 
-# ── 5. Preflight ─────────────────────────────────────────────────────────
+# ── 5. Put `hermes-bridge` on PATH ───────────────────────────────────────
+# The console script lands in the venv's bin dir, which usually isn't on the
+# user's PATH. Symlink it into the first writable PATH dir so `hermes-bridge`
+# just works from any shell.
+BRIDGE_BIN="$(dirname "$PYBIN")/hermes-bridge"
+LINKED=""
+if [[ -x "$BRIDGE_BIN" ]]; then
+  if command -v hermes-bridge >/dev/null 2>&1; then
+    LINKED="already"  # already resolvable on PATH
+  else
+    # Prefer common user/system bin dirs that are typically on PATH.
+    for d in "$HOME/.local/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+      if [[ -d "$d" && -w "$d" ]]; then
+        ln -sf "$BRIDGE_BIN" "$d/hermes-bridge" && LINKED="$d/hermes-bridge" && break
+      fi
+    done
+    # Fall back: create ~/.local/bin if nothing writable was found.
+    if [[ -z "$LINKED" ]]; then
+      mkdir -p "$HOME/.local/bin" \
+        && ln -sf "$BRIDGE_BIN" "$HOME/.local/bin/hermes-bridge" \
+        && LINKED="$HOME/.local/bin/hermes-bridge"
+    fi
+  fi
+fi
+if [[ -n "$LINKED" && "$LINKED" != "already" ]]; then
+  ok "Linked hermes-bridge → $LINKED"
+fi
+
+# ── 6. Preflight ─────────────────────────────────────────────────────────
 say "Running environment check..."
 if HERMES_AGENT_ROOT="$HERMES_ROOT" "$PYBIN" -m hermes_bridge.cli doctor; then
   echo
   ok "Hermes Bridge is ready."
   echo
-  echo "  Start it:   $PYBIN -m hermes_bridge.cli start"
-  echo "  Or:         hermes-bridge start    (if $(dirname "$PYBIN") is on your PATH)"
-  echo "  Pair app:   hermes-bridge pair"
+  if command -v hermes-bridge >/dev/null 2>&1 || [[ "$LINKED" == "already" ]]; then
+    echo "  Start it:   hermes-bridge start"
+    echo "  Pair app:   hermes-bridge pair"
+  elif [[ -n "$LINKED" ]]; then
+    LINKDIR="$(dirname "$LINKED")"
+    echo "  Start it:   hermes-bridge start"
+    echo "  Pair app:   hermes-bridge pair"
+    echo
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$LINKDIR"; then
+      warn "$LINKDIR is not on your PATH yet. Add it:"
+      echo "    echo 'export PATH=\"$LINKDIR:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+      echo "  Or run directly:  $BRIDGE_BIN start"
+    fi
+  else
+    echo "  Start it:   $BRIDGE_BIN start"
+    echo "  Pair app:   $BRIDGE_BIN pair"
+  fi
   echo
 else
   die "Preflight failed — see messages above."
