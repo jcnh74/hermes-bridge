@@ -29,10 +29,22 @@ The bridge runs alongside a Hermes installation, discovers the agents and skills
 ## Install (one command)
 
 ```bash
+curl -fsSL https://get.agentfy.app | bash
+```
+
+That's it. The bootstrap clones this repo to `~/.hermes/hermes-bridge-src`, runs
+`install.sh`, and prints exactly how to start. Safe to re-run (idempotent) — it
+updates an existing checkout in place.
+
+<details>
+<summary>Prefer to clone it yourself?</summary>
+
+```bash
 git clone https://github.com/jcnh74/hermes-bridge.git
 cd hermes-bridge
 ./install.sh
 ```
+</details>
 
 The installer:
 1. Finds your Hermes install (or honors `HERMES_AGENT_ROOT=/path`)
