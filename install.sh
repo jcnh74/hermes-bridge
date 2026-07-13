@@ -58,13 +58,35 @@ ok "Python: $PYBIN (v$PYVER)"
 "$PYBIN" -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' \
   || die "Python 3.11+ required (found $PYVER). Use the Hermes venv or upgrade Python."
 
-# ── 3. Install the bridge into that environment ──────────────────────────
+# ── 3. Ensure pip is available in that environment ───────────────────────
+# Some venvs are created with --without-pip; bootstrap it before installing.
+if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
+  warn "pip not found in this environment — bootstrapping with ensurepip..."
+  if "$PYBIN" -m ensurepip --upgrade >/dev/null 2>&1; then
+    ok "pip bootstrapped via ensurepip"
+  else
+    # Last resort: fetch get-pip.py and run it into this interpreter.
+    warn "ensurepip unavailable — fetching get-pip.py..."
+    GETPIP="$(mktemp -t get-pip.XXXXXX.py)"
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$GETPIP"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO "$GETPIP" https://bootstrap.pypa.io/get-pip.py
+    fi
+    "$PYBIN" "$GETPIP" >/dev/null 2>&1 \
+      && ok "pip installed via get-pip.py" \
+      || die "Could not bootstrap pip. Install it manually: $PYBIN -m ensurepip --upgrade"
+    rm -f "$GETPIP"
+  fi
+fi
+
+# ── 4. Install the bridge into that environment ──────────────────────────
 say "Installing hermes-bridge (with QR support)..."
 "$PYBIN" -m pip install --upgrade --quiet "$SCRIPT_DIR[qr]" \
   || die "pip install failed. Try: $PYBIN -m pip install -e \"$SCRIPT_DIR[qr]\""
 ok "Installed into $PYBIN"
 
-# ── 4. Preflight ─────────────────────────────────────────────────────────
+# ── 5. Preflight ─────────────────────────────────────────────────────────
 say "Running environment check..."
 if HERMES_AGENT_ROOT="$HERMES_ROOT" "$PYBIN" -m hermes_bridge.cli doctor; then
   echo
