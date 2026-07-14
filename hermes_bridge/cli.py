@@ -165,7 +165,7 @@ def cmd_start(args):
 
     # Set Hermes defaults
     if not os.getenv("HERMES_DEFAULT_MODEL"):
-        os.environ["HERMES_DEFAULT_MODEL"] = "deepseek-chat"
+        os.environ["HERMES_DEFAULT_MODEL"] = "grok-4.20-0309-reasoning"
 
     uvicorn.run(
         app,

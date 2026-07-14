@@ -99,39 +99,44 @@ def get_agent_list():
     """Return a list of available agents from the Hermes config.
 
     Reads the agents config from ~/.hermes/config.yaml or the default agent list.
+    Prefer the config entry for ``main`` when present so the API matches what
+    sessions actually run (do not hardcode HERMES_DEFAULT_MODEL for main).
     """
     _ensure_hermes_env()
 
-    agents = []
-
-    # Default: the 'main' agent is always available
-    agents.append({
+    default_model = os.getenv("HERMES_DEFAULT_MODEL", "grok-4.20-0309-reasoning")
+    main_entry = {
         "id": "main",
         "name": "Hermes",
-        "model": os.getenv("HERMES_DEFAULT_MODEL", "deepseek-chat"),
+        "model": default_model,
         "description": "Main Hermes assistant",
         "emoji": "Sparkles",
-    })
+    }
+    others: list[dict] = []
 
-    # Check config.yaml for additional agents
     try:
         config = load_config()
         agent_configs = config.get("agents", {}).get("list", [])
         if isinstance(agent_configs, list):
             for ac in agent_configs:
                 agent_id = ac.get("id") or ac.get("agentId")
-                if agent_id and agent_id != "main":
-                    agents.append({
-                        "id": agent_id,
-                        "name": ac.get("identity", {}).get("name", ac.get("name", agent_id)),
-                        "model": ac.get("model", ""),
-                        "description": ac.get("identity", {}).get("description", ""),
-                        "emoji": ac.get("identity", {}).get("emoji", ""),
-                    })
+                if not agent_id:
+                    continue
+                entry = {
+                    "id": agent_id,
+                    "name": ac.get("identity", {}).get("name", ac.get("name", agent_id)),
+                    "model": ac.get("model", "") or default_model,
+                    "description": ac.get("identity", {}).get("description", ""),
+                    "emoji": ac.get("identity", {}).get("emoji", ""),
+                }
+                if agent_id == "main":
+                    main_entry = entry
+                else:
+                    others.append(entry)
     except Exception:
         pass  # Non-fatal — main agent is always available
 
-    return agents
+    return [main_entry, *others]
 
 
 def create_custom_agent(
@@ -157,7 +162,7 @@ def create_custom_agent(
 
     agent_entry = {
         "id": agent_id,
-        "model": model or os.getenv("HERMES_DEFAULT_MODEL", "deepseek-chat"),
+        "model": model or os.getenv("HERMES_DEFAULT_MODEL", "grok-4.20-0309-reasoning"),
         "identity": {
             "name": name,
             "emoji": emoji or "🤖",
@@ -361,7 +366,7 @@ def update_custom_agent(
             config.setdefault("agents", {}).setdefault("list", [])
             config["agents"]["list"].append({
                 "id": "main",
-                "model": os.getenv("HERMES_DEFAULT_MODEL", "deepseek-chat"),
+                "model": os.getenv("HERMES_DEFAULT_MODEL", "grok-4.20-0309-reasoning"),
                 "identity": {
                     "name": name or "Hermes",
                     "emoji": emoji or "Sparkles",
@@ -432,7 +437,7 @@ class AgentProxy:
         from run_agent import AIAgent
         from hermes_cli.runtime_provider import resolve_runtime_provider, format_runtime_provider_error
 
-        model = self.override_model or os.getenv("HERMES_DEFAULT_MODEL", "deepseek-chat")
+        model = self.override_model or os.getenv("HERMES_DEFAULT_MODEL", "grok-4.20-0309-reasoning")
 
         # Resolve runtime — start with default provider
         runtime = resolve_runtime()
