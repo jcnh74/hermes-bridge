@@ -34,6 +34,7 @@ from .models import (
     SessionInfo,
 )
 from .agent_proxy import AgentProxy, get_agent_list, get_available_models, resolve_runtime, create_custom_agent, update_custom_agent
+from .backends import make_backend
 from .persistence import store_message, get_messages as get_persisted_messages, get_all_session_keys, get_session_summary
 from .skills import (
     list_skills as _list_skills,
@@ -80,7 +81,10 @@ def _get_or_create_session(agent_id: str, platform: str = "bridge") -> dict:
         pass
 
     key = _make_session_key(agent_id)
-    proxy = AgentProxy(agent_id=agent_id, model=saved_model, platform=platform)
+    # make_backend routes by agent id: 'openclaw:*' -> ACP/OpenClaw,
+    # 'acp:*' -> ACP/Hermes, anything else -> in-process Hermes (default).
+    # The returned object satisfies the same interface AgentProxy did.
+    proxy = make_backend(agent_id=agent_id, model=saved_model, platform=platform)
     info = SessionInfo(
         key=key,
         agent_id=agent_id,
