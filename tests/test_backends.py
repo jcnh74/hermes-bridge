@@ -7,20 +7,26 @@ import pytest
 
 from hermes_bridge.backends import make_backend, AcpBackend
 from hermes_bridge.backends.base import AgentBackend
+from hermes_bridge.backends.openclaw_local import OpenClawLocalBackend
 
 
-def test_openclaw_prefix_routes_to_acp_openclaw():
+def test_openclaw_prefix_routes_to_local_gatewayfree():
     be = make_backend("openclaw:main")
-    assert isinstance(be, AcpBackend)
-    assert be.server_command == ["openclaw", "acp"]
+    assert isinstance(be, OpenClawLocalBackend)
     assert be.agent_id == "main"
 
 
-def test_oc_shortprefix_routes_to_acp_openclaw():
+def test_oc_shortprefix_routes_to_local_gatewayfree():
     be = make_backend("oc:director")
+    assert isinstance(be, OpenClawLocalBackend)
+    assert be.agent_id == "director"
+
+
+def test_openclaw_acp_prefix_routes_to_acp_openclaw():
+    be = make_backend("openclaw-acp:main")
     assert isinstance(be, AcpBackend)
     assert be.server_command == ["openclaw", "acp"]
-    assert be.agent_id == "director"
+    assert be.agent_id == "main"
 
 
 def test_acp_prefix_routes_to_hermes_acp():

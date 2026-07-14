@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 # Agent-id prefixes route to a backend. Everything without a known prefix
 # defaults to the in-process Hermes backend (backwards compatible).
 _OPENCLAW_PREFIXES = ("openclaw:", "oc:")
+_OPENCLAW_ACP_PREFIXES = ("openclaw-acp:",)
 _ACP_PREFIXES = ("acp:",)
 
 
@@ -52,7 +53,8 @@ def make_backend(
     """
     lid = agent_id.lower()
 
-    if lid.startswith(_OPENCLAW_PREFIXES):
+    # OpenClaw via ACP bridge (needs gateway running) — explicit opt-in.
+    if lid.startswith(_OPENCLAW_ACP_PREFIXES):
         name = agent_id.split(":", 1)[1] or "main"
         return AcpBackend(
             _openclaw_acp_server(),
@@ -60,6 +62,13 @@ def make_backend(
             model=model,
             cwd=cwd,
         )
+
+    # OpenClaw gateway-free (openclaw agent --local) — the default OpenClaw path.
+    if lid.startswith(_OPENCLAW_PREFIXES):
+        from .openclaw_local import OpenClawLocalBackend
+
+        name = agent_id.split(":", 1)[1] or "main"
+        return OpenClawLocalBackend(agent_id=name, model=model)
 
     if lid.startswith(_ACP_PREFIXES):
         name = agent_id.split(":", 1)[1] or "main"
