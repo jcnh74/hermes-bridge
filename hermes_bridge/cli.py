@@ -229,7 +229,11 @@ def cmd_restart(args):
     """Restart the bridge server."""
     cmd_stop(args)
     time.sleep(1)
-    # Make sure foreground mode matches original
+    # restart parser doesn't define start-only flags; supply defaults
+    if not hasattr(args, "foreground"):
+        args.foreground = False
+    if not hasattr(args, "skip_checks"):
+        args.skip_checks = False
     cmd_start(args)
 
 

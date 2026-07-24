@@ -234,6 +234,7 @@ def get_available_models() -> list[dict]:
         "anthropic",    # ANTHROPIC_API_KEY — works, but may have usage caps
         "gemini",       # GOOGLE_API_KEY — needs Generative Language API enabled
         "minimax",      # MINIMAX_API_KEY — needs correct endpoint
+        "kimi-coding",  # KIMI_API_KEY / MOONSHOT_API_KEY — Moonshot direct (kimi-k3, k2.x)
     ]
 
     # Providers that don't have a direct routing rule in _create_agent()
@@ -247,6 +248,8 @@ def get_available_models() -> list[dict]:
         "anthropic": "ANTHROPIC_API_KEY",
         "gemini": "GOOGLE_API_KEY",
         "minimax": "MINIMAX_API_KEY",
+        # Hermes resolves kimi-coding via KIMI_API_KEY (preferred) or MOONSHOT_API_KEY
+        "kimi-coding": "KIMI_API_KEY",
     }
 
     # Pre-check which provider keys are present
@@ -266,19 +269,29 @@ def get_available_models() -> list[dict]:
                 if m not in seen:
                     seen.add(m)
                     if not _has_key.get(provider_key, False):
-                        status = "needs_key"
-                    elif provider_key == "gemini" or provider_key == "minimax":
-                        # Gemini and MiniMax models now have routing (gemini-* and MiniMax-*)
-                        status = "available"
-                    elif provider_key == "anthropic":
-                        # Claude models route correctly — but note usage caps apply
+                        # kimi-coding also accepts MOONSHOT_API_KEY
+                        if provider_key == "kimi-coding" and _has_api_key("MOONSHOT_API_KEY"):
+                            status = "available"
+                        else:
+                            status = "needs_key"
+                    elif provider_key in ("gemini", "minimax", "kimi-coding", "anthropic"):
                         status = "available"
                     else:
                         status = "available" if _has_key.get(provider_key, False) else "needs_key"
+                    # Friendlier display names for Kimi flagship models
+                    display = m
+                    if m == "kimi-k3":
+                        display = "Kimi K3"
+                    elif m == "kimi-k2.7-code":
+                        display = "Kimi K2.7 Code"
+                    elif m == "kimi-k2.7-code-highspeed":
+                        display = "Kimi K2.7 Code Highspeed"
+                    elif m == "kimi-k2.6":
+                        display = "Kimi K2.6"
                     result.append({
                         "id": m,
-                        "name": m,
-                        "provider": provider_key,
+                        "name": display,
+                        "provider": provider_key if provider_key != "kimi-coding" else "moonshot",
                         "base_url": "",
                         "payment_required": False,
                         "status": status,
@@ -511,6 +524,17 @@ class AgentProxy:
                 logger.info("Routing model '%s' to MiniMax (api.minimax.chat)", model)
             else:
                 logger.warning("MINIMAX_API_KEY not set — falling back to default provider")
+        elif model.startswith("kimi-") or model.startswith("moonshot-"):
+            # Moonshot / Kimi direct API (kimi-k3, kimi-k2.6, kimi-k2.7-code, …)
+            try:
+                kimi_runtime = resolve_runtime_provider(requested="kimi-coding")
+                runtime["base_url"] = kimi_runtime.get("base_url") or "https://api.moonshot.ai/v1"
+                runtime["api_key"] = kimi_runtime.get("api_key") or runtime.get("api_key")
+                runtime["provider"] = kimi_runtime.get("provider") or "kimi-coding"
+                runtime["api_mode"] = kimi_runtime.get("api_mode", "chat_completions")
+                logger.info("Routing model '%s' to Kimi/Moonshot (%s)", model, runtime["base_url"])
+            except Exception as exc:
+                logger.warning("Could not resolve Kimi/Moonshot runtime: %s", exc)
 
         # Read toolsets for this platform from config
         try:
